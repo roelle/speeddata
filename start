@@ -1,0 +1,17 @@
+#!/bin/bash
+
+if [[ -n "$VIRTUAL_ENV" ]]; then
+    echo "Deactivating current virtual environment..."
+    deactivate
+fi
+
+echo "Activating virtual environment..."
+source "bin/activate"
+
+echo "Starting applications..."
+./bin/supervisord -c supervisord.conf
+sleep 3
+
+echo "Opening webpage view..."
+google-chrome http://localhost:9001
+google-chrome index.html

@@ -1,0 +1,3 @@
+#!/bin/bash
+
+./bin/supervisorctl -c supervisord.conf shutdown
