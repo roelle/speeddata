@@ -1,10 +1,10 @@
 # Python virtual environment (created by ./install)
-bin/
-lib/
-lib64/
-include/
-share/
-pyvenv.cfg
+/bin/
+/lib/
+/lib64/
+/include/
+/share/
+/pyvenv.cfg
 pip-selfcheck.json
 
 # Python bytecode
@@ -15,6 +15,12 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+# C/C++ build artifacts
+*.o
+*.out
+*.exe
+relay/c/build/
 
 # Node.js
 node_modules/
@@ -60,3 +66,8 @@ desktop.ini
 # Temporary files
 *.tmp
 .cache/
+
+# Media files (screencasts, etc.)
+*.webm
+*.mp4
+*.mov
