@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpeedData Stripchart</title>
+    <style>
+        body {
+            font-family: monospace;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            margin-bottom: 10px;
+        }
+        .data-section {
+            background: white;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        canvas.stripchart {
+            display: block;
+            width: 100%;
+            border: 1px solid #ccc;
+            margin: 10px 0;
+            background: #fff;
+        }
+        .chart-container {
+            margin-bottom: 30px;
+        }
+        @media (prefers-color-scheme: dark) {
+            body {
+                background: #1a1a1a;
+                color: #eee;
+            }
+            .data-section {
+                background: #2a2a2a;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>SpeedData Live Visualization</h1>
+
+    <div class="data-section">
+        <h2>Latest Values</h2>
+        <p><strong>Time:</strong> <span id="time" class="data">Waiting for data...</span></p>
+        <p><strong>Message:</strong> <span id="message" class="data">Waiting for data...</span></p>
+        <p><strong>Counter:</strong> <span id="counter" class="data">Waiting for data...</span></p>
+        <p><strong>Sine:</strong> <span id="sine_wave" class="data">Waiting for data...</span></p>
+        <p><strong>Ramp:</strong> <span id="ramp" class="data">Waiting for data...</span></p>
+    </div>
+
+    <div class="chart-container">
+        <h2>Sine Wave (60s window, -1 to +1)</h2>
+        <canvas class="stripchart"
+                data-signals="example.sine_wave"
+                data-window="60"
+                data-height="300"
+                data-ymin="-1.2"
+                data-ymax="1.2"
+                data-theme="auto">
+        </canvas>
+    </div>
+
+    <div class="chart-container">
+        <h2>All Test Signals (60s window, auto colors)</h2>
+        <canvas class="stripchart"
+                data-signals="example.sine_wave,example.ramp,example.square_wave,example.noise"
+                data-window="60"
+                data-height="400"
+                data-ymin="-1.5"
+                data-ymax="1.5"
+                data-theme="auto">
+        </canvas>
+    </div>
+
+    <div class="chart-container">
+        <h2>Custom Colors Example (sine=red, ramp=green)</h2>
+        <canvas class="stripchart"
+                data-signals="example.sine_wave,example.ramp"
+                data-colors="#FF0000,#00FF00"
+                data-window="60"
+                data-height="300"
+                data-ymin="-1.5"
+                data-ymax="1.5"
+                data-theme="auto">
+        </canvas>
+    </div>
+
+    <script src="stripchart.js"></script>
+    <script src="frontend.js"></script>
+</body>
+</html>

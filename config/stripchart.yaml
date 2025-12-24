@@ -1,0 +1,9 @@
+# SpeedData Stripchart Configuration
+
+websocket:
+  port: 8080
+
+decimation:
+  # Stripchart subscribes to relay's decimated multicast stream
+  # No additional decimation needed
+  pass_through: true

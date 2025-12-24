@@ -1,0 +1,8 @@
+# SpeedData Pivot Configuration
+
+api:
+  port: 8000
+  limits:
+    max_channels: 20
+    max_duration_minutes: 5
+    timeout_seconds: 60

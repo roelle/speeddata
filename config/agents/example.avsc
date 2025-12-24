@@ -1,0 +1,14 @@
+{
+    "namespace": "speeddata.example",
+    "type": "record",
+    "name": "data",
+    "fields": [
+        {"name": "time", "type": "long", "logicalType": "timestamp-nanos"},
+        {"name": "message", "type": "string"},
+        {"name": "counter", "type": "int"},
+        {"name": "sine_wave", "type": "double"},
+        {"name": "ramp", "type": "double"},
+        {"name": "square_wave", "type": "double"},
+        {"name": "noise", "type": "double"}
+    ]
+}

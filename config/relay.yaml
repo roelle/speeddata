@@ -1,0 +1,19 @@
+# SpeedData Relay Configuration
+
+channels:
+  - name: "example"
+    port: 26000
+    schema: "config/agents/example.avsc"
+
+decimation:
+  enabled: true
+  factor: 5  # For 1Hz test data, updates every 5 seconds (reduce for faster visualization)
+  algorithm: "downsample"  # Options: downsample, average, minmax, rms
+
+rotation:
+  mode: "time"  # Options: time, size
+  threshold: 3600  # seconds if mode=time, bytes if mode=size
+
+retention:
+  mode: "ttl"  # Options: ttl, quota
+  value: 86400  # seconds if mode=ttl, bytes if mode=quota

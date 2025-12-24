@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "quint-code": {
+      "command": "/home/roelle/.local/bin/quint-code",
+      "args": [
+        "serve"
+      ],
+      "cwd": "/home/roelle/data/sd-dev",
+      "env": {
+        "QUINT_PROJECT_ROOT": "/home/roelle/data/sd-dev"
+      }
+    }
+  }
+}

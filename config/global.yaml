@@ -1,0 +1,13 @@
+# SpeedData Global Configuration
+# Shared settings across all services
+
+multicast:
+  full_rate:
+    address: "239.1.1.1"
+    port: 6000
+  decimated:
+    address: "239.1.1.2"
+    port: 6001
+
+storage:
+  avro_path: "./data"  # Use local directory for development (change to /var/speeddata/avro for production)
