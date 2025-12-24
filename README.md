@@ -1,6 +1,8 @@
 # SpeedData
 
-SpeedData is a lightweight, ephemoral, high-performance system for receiving, batching, and visualizing data streamed over a network. The project leverages UDP multicast for low-latency communication, Avro for efficient serialization, and WebSockets for real-time updates in the browser.
+SpeedData is a lightweight, ephemeral, high-performance system for receiving, batching, and visualizing data streamed over a network. The project leverages UDP multicast for low-latency communication, Avro for efficient serialization, and WebSockets for real-time updates in the browser.
+
+**v0.5 New:** REST API for dynamic channel registration - remote devices can now register/de-register channels at runtime without editing config files.
 
 Do you have a complex machine with a distributed control and telemetry system you would like to instrument? SpeedData makes data collection and visualization easy.
 
@@ -59,8 +61,11 @@ speeddata/
 │   │   ├── tests/       # Unit tests
 │   │   └── Makefile     # Build system
 │   ├── python/          # Python relay (legacy, deprecated in v0.4)
-│   ├── orchestrator.py  # Fleet manager for C relays
-│   └── README.md        # Relay documentation
+│   ├── orchestrator.py  # Fleet manager for C relays (v0.5: with embedded REST API)
+│   ├── api.py           # Flask REST API for channel registration (v0.5)
+│   ├── registry_db.py   # SQLite database for channel registry (v0.5)
+│   ├── README.md        # Relay documentation
+│   └── API.md           # REST API documentation (v0.5)
 ├── stripchart/
 │   ├── server/          # WebSocket server (server.js)
 │   └── frontend/        # Web frontend (index.html, frontend.js)
@@ -81,7 +86,11 @@ speeddata/
    - Per-channel process model (fault isolation)
    - Receives UDP data → writes AVRO → multicasts (full-rate + decimated)
    - Managed by Python orchestrator (`relay/orchestrator.py`)
-   - See `relay/README.md` for details
+   - **v0.5:** Orchestrator includes embedded REST API for dynamic channel registration
+     - Endpoint: `http://localhost:8080/api/v1`
+     - Register/de-register channels without editing config files
+     - See `relay/API.md` for full API documentation
+   - See `relay/README.md` for relay details
    - **Legacy:** Python relay (`relay/python/rowdog.py`) deprecated in v0.4
 3. **Stripchart Server** (`stripchart/server/server.js`):
    - Subscribes to relay multicast
