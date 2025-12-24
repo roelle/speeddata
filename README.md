@@ -13,7 +13,7 @@ This isn't a data lake or warehouse or any of those long-term stable data relati
 - SpeedData can run on a Raspberry Pi on Wifi or a 16-core Xeon with quad 10Gbit Ethernet ports (collecting 10Mbps or 100Gbps respectively)
 
 ![Live web visualization](screenshot.png)
-*Real-time stripcharts with multi-colored signals. [Watch screencast](screencast.webm)*
+*Real-time stripcharts with multi-colored signals.*
 
 #### Technical details
 - Data is sent efficiently over the wire using UDP and Avro's encoding
@@ -48,14 +48,25 @@ HDF5 will have one set per file.
 ### Directory Structure
 ```
 speeddata/
-├── config/agents/        # AVRO schema files for data channels
-├── relay/python/         # Relay service (rowdog.py)
+├── config/
+│   ├── agents/          # AVRO schema files for data channels
+│   ├── global.yaml      # Global configuration (multicast, storage)
+│   └── relay.yaml       # Relay configuration (channels, decimation)
+├── relay/
+│   ├── c/               # C relay implementation (v0.4)
+│   │   ├── src/         # Source files (main.c, avro_writer.c, etc.)
+│   │   ├── include/     # Headers (relay.h)
+│   │   ├── tests/       # Unit tests
+│   │   └── Makefile     # Build system
+│   ├── python/          # Python relay (legacy, deprecated in v0.4)
+│   ├── orchestrator.py  # Fleet manager for C relays
+│   └── README.md        # Relay documentation
 ├── stripchart/
 │   ├── server/          # WebSocket server (server.js)
 │   └── frontend/        # Web frontend (index.html, frontend.js)
 ├── pivot/python/         # Row-to-column transformer (catcol.py)
-├── lib/python/          # Roelle DataSet with HDF5 loader
-├── examples/sender/     # Example data source (sender.py, receiver.py)
+├── lib/python/          # Roelle DataSet with HDF5/AVRO loaders
+├── examples/sender/     # Example data source (sender.py)
 ├── tests/               # Integration tests
 └── Makefile             # Build system
 ```
@@ -65,10 +76,13 @@ speeddata/
    - Example data source sending AVRO-encoded UDP packets
    - Demonstrates wire encoding with preset schema
    - One packet per time sample
-2. **Relay** (`relay/python/rowdog.py`):
-   - Receives UDP data on configured ports
-   - Writes AVRO format to disk (zero-copy)
-   - Relays packets to multicast group for subscribers
+2. **Relay** (`relay/c/`, v0.4):
+   - High-performance C99 implementation (5Gbps per-channel throughput)
+   - Per-channel process model (fault isolation)
+   - Receives UDP data → writes AVRO → multicasts (full-rate + decimated)
+   - Managed by Python orchestrator (`relay/orchestrator.py`)
+   - See `relay/README.md` for details
+   - **Legacy:** Python relay (`relay/python/rowdog.py`) deprecated in v0.4
 3. **Stripchart Server** (`stripchart/server/server.js`):
    - Subscribes to relay multicast
    - Deserializes AVRO packets
@@ -386,13 +400,23 @@ make install
 source bin/activate
 ```
 
-**Step 1: Start Services**
+**Step 1: Build C Relay (v0.4)**
+```bash
+# Build C relay binary
+cd relay/c
+make
+cd ../..
+```
+
+**Step 2: Start Services**
 ```bash
 # Terminal 1: Start example data sender
 python examples/sender/sender.py
 
-# Terminal 2: Start relay (receives UDP, writes AVRO, relays to multicast)
-python relay/python/rowdog.py
+# Terminal 2: Start relay orchestrator (manages C relay processes)
+python relay/orchestrator.py
+# OR use Python relay (deprecated):
+# python relay/python/rowdog.py
 
 # Terminal 3: Start stripchart WebSocket server
 cd stripchart/server
@@ -402,7 +426,7 @@ node server.js
 python pivot/python/api_server.py
 ```
 
-**Step 2: View Live Visualization**
+**Step 3: View Live Visualization**
 ```bash
 # Open stripchart frontend in browser
 open stripchart/frontend/index.html
@@ -414,7 +438,7 @@ open stripchart/frontend/index.html
 # - Dark/light mode based on system preference
 ```
 
-**Step 3: Test Pivot API (optional)**
+**Step 4: Test Pivot API (optional)**
 ```bash
 # Query HDF5 export via REST API
 curl "http://localhost:8000/api/v1/pivot/export?start=2025-01-23T14:00:00Z&duration=PT30S&channels=example" \
@@ -427,7 +451,7 @@ ls -lh test_export.h5
 python -c "from lib.python.dataset import read_hdf5; data = read_hdf5('test_export.h5'); print(data)"
 ```
 
-**Step 4: Test Configuration**
+**Step 5: Test Configuration**
 ```bash
 # Test config loader
 python -c "from lib.python.speeddata_config import load_config; print(load_config('relay'))"
@@ -442,9 +466,14 @@ ls -l config/*.yaml
 # Run all tests
 make test
 
-# Or run pytest directly
-pytest lib/python/tests/
-pytest tests/
+# C relay tests (v0.4)
+cd relay/c/tests && make test           # Unit tests (AVRO encoding, decimation, writer)
+cd ../.. && python3 tests/test_relay_integration.py   # Integration tests (UDP → AVRO → multicast)
+python3 tests/test_full_system.py       # Full system test (agent → relay → AVRO + multicast)
+
+# Python tests
+pytest lib/python/tests/                # Library tests
+pytest tests/                           # Integration tests
 
 # Run specific tests
 pytest lib/python/tests/test_dataset_hdf5.py  # HDF5 loader tests
@@ -453,8 +482,16 @@ pytest tests/test_api_burst.py                 # Pivot API burst tests
 
 ### Expected Test Results
 
+**C Relay (v0.4):**
+- ✓ 9 tests in `relay/c/tests/` (utils, decimator, AVRO writer)
+- ✓ 3 tests in `tests/test_relay_integration.py` (UDP → AVRO → multicast)
+- ✓ 1 test in `tests/test_full_system.py` (end-to-end data flow)
+
+**Python:**
 - ✓ 8 tests in `lib/python/tests/test_dataset_hdf5.py` (HDF5 loading)
 - ✓ 3 tests in `tests/test_api_burst.py` (API burst handling)
+
+**Integration:**
 - ✓ All services start without errors
 - ✓ Stripchart displays live scrolling data
 - ✓ Pivot API returns valid HDF5 files
@@ -535,11 +572,16 @@ pkill -f api_server.py
   - `examples/jupyter/speeddata_analysis_example.ipynb`
   - Demonstrates Pivot API usage, DataSet loading, plotting, analysis 
 
-### v0.4 - April 2025
-- Investigate larger data objects in HDF5 files for better compression (would change storage format).
-- Improve performance. Port the relay to a compiled langage. 
-- Create a status and control website (registration, channels, signals etc.)
-- Add channel registration (via REST)
+### v0.4 - In Progress
+- ✓ **Port relay to compiled language** (FPF Decision: DRR-2025-12-24-v0-4-relay-architecture-c-stdio-per-channel-revised)
+  - C99 implementation with 5Gbps per-channel throughput
+  - Per-channel process model (fault isolation)
+  - Python orchestrator for fleet management
+  - Comprehensive testing (unit + integration + full system)
+  - See `relay/README.md` for details
+- [ ] Investigate larger data objects in HDF5 files for better compression (would change storage format)
+- [ ] Create a status and control website (registration, channels, signals etc.)
+- [ ] Add channel registration (via REST)
 
 ### v0.5 - May 2025
 - Firm interfaces
