@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
 """
-SpeedData Relay Orchestrator
+SpeedData Relay Orchestrator v0.5
 Manages fleet of C relay processes (one per channel)
+With embedded Flask REST API for dynamic channel registration
 """
 import subprocess
 import time
 import signal
 import sys
 import os
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional
 
 # Add lib to path for config access
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../lib/python'))
 from speeddata_config import load_config
+
+# Add relay directory to path for API imports
+sys.path.insert(0, os.path.dirname(__file__))
+from registry_db import RegistryDB
+from api import create_app
 
 
 class RelayProcess:
@@ -109,14 +116,26 @@ class RelayProcess:
 
 
 class RelayOrchestrator:
-    """Orchestrates fleet of relay processes"""
+    """Orchestrates fleet of relay processes with REST API"""
 
-    def __init__(self, config_path: str = 'config', relay_binary: str = 'relay/c/build/relay'):
+    def __init__(self, config_path: str = 'config', relay_binary: str = 'relay/c/build/relay',
+                 enable_api: bool = True, api_port: int = 8080):
         self.config = load_config('relay', config_path)
         self.global_config = self._load_global_config(config_path)
         self.relay_binary = relay_binary
         self.processes: Dict[str, RelayProcess] = {}
         self.running = True
+        self.enable_api = enable_api
+        self.api_port = api_port
+        self.api_thread = None
+        self.process_lock = threading.Lock()  # Thread-safe process management
+
+        # Initialize registry database
+        self.db = RegistryDB("data/registry.db")
+
+        # Initialize Flask app if API enabled
+        if self.enable_api:
+            self.app = create_app(self.db, self)
 
         # Verify relay binary exists
         if not Path(self.relay_binary).exists():
@@ -134,32 +153,106 @@ class RelayOrchestrator:
                 return yaml.safe_load(f) or {}
         return {}
 
+    def _merge_config_with_db(self):
+        """
+        Merge YAML baseline with database state
+        1. Load channels from relay.yaml as baseline
+        2. Insert into DB (only if not already registered)
+        3. Load final channel list from DB (DB is source of truth)
+        """
+        yaml_channels = self.config.get('channels', [])
+
+        if yaml_channels:
+            print(f"Loading {len(yaml_channels)} baseline channels from relay.yaml...")
+            inserted = self.db.load_yaml_baseline(yaml_channels)
+            print(f"  {inserted} new channels added to registry")
+            print(f"  {len(yaml_channels) - inserted} channels already registered (DB takes precedence)\n")
+
+        # Load all channels from DB
+        db_channels = self.db.list_channels()
+        return db_channels
+
     def start_all(self):
-        """Start all configured channel relays"""
-        channels = self.config.get('channels', [])
+        """Start all configured channel relays from merged config"""
+        # Merge YAML + DB, DB wins
+        channels = self._merge_config_with_db()
+
         if not channels:
-            print("WARNING: No channels configured in relay.yaml")
+            print("WARNING: No channels configured (check relay.yaml or registry.db)")
             return
 
         print(f"Starting {len(channels)} relay process(es)...\n")
 
         for channel in channels:
             name = channel['name']
-            relay = RelayProcess(channel, self.relay_binary, self.global_config)
-            self.processes[name] = relay
-            relay.start()
-            time.sleep(0.5)  # Stagger starts
+            try:
+                # Build channel config from DB record
+                channel_config = {
+                    'name': name,
+                    'port': channel['port'],
+                    'schema': channel['schema_path']
+                }
+                # Merge with stored config JSON if exists
+                if channel.get('config'):
+                    channel_config.update(channel['config'])
 
-        print(f"\n✓ All {len(self.processes)} relay processes started")
+                with self.process_lock:
+                    relay = RelayProcess(channel_config, self.relay_binary, self.global_config)
+                    self.processes[name] = relay
+                    relay.start()
+
+                    # Update DB with PID
+                    self.db.update_process_info(name, relay.process.pid, "active")
+
+                time.sleep(0.5)  # Stagger starts
+            except Exception as e:
+                print(f"[{name}] ERROR: Failed to start: {e}")
+
+        print(f"\n✓ {len(self.processes)}/{len(channels)} relay processes started")
 
     def stop_all(self):
         """Stop all relay processes"""
         print("\nStopping all relay processes...")
 
-        for relay in self.processes.values():
-            relay.stop()
+        with self.process_lock:
+            for name, relay in self.processes.items():
+                relay.stop()
+                # Clear PID from DB
+                self.db.clear_process_info(name)
 
         print("✓ All relay processes stopped")
+
+    def spawn_relay(self, channel_config: dict) -> int:
+        """
+        Spawn a new relay process for a channel (called by API)
+        Returns PID of spawned process
+        """
+        name = channel_config['name']
+
+        with self.process_lock:
+            if name in self.processes:
+                raise ValueError(f"Relay already running for channel '{name}'")
+
+            relay = RelayProcess(channel_config, self.relay_binary, self.global_config)
+            relay.start()
+            self.processes[name] = relay
+
+            return relay.process.pid
+
+    def stop_relay(self, name: str):
+        """
+        Stop a specific relay process (called by API)
+        """
+        with self.process_lock:
+            if name not in self.processes:
+                raise ValueError(f"No relay running for channel '{name}'")
+
+            relay = self.processes[name]
+            relay.stop()
+            del self.processes[name]
+
+            # Clear PID from DB
+            self.db.clear_process_info(name)
 
     def monitor_loop(self, check_interval: float = 2.0):
         """Monitor and restart failed processes"""
@@ -190,15 +283,30 @@ class RelayOrchestrator:
             else:
                 print(f"[{name}] STOPPED")
 
+    def _run_api_server(self):
+        """Run Flask API in background thread"""
+        print(f"Starting REST API on port {self.api_port}...")
+        self.app.run(host='0.0.0.0', port=self.api_port, threaded=True, debug=False)
+
     def run(self):
-        """Main orchestrator run loop"""
+        """Main orchestrator run loop with API server"""
         # Setup signal handlers
         signal.signal(signal.SIGINT, lambda s, f: None)  # Handle in monitor_loop
         signal.signal(signal.SIGTERM, self._shutdown_handler)
 
         try:
+            # Start Flask API in background thread
+            if self.enable_api:
+                self.api_thread = threading.Thread(target=self._run_api_server, daemon=True)
+                self.api_thread.start()
+                print(f"✓ REST API started on http://0.0.0.0:{self.api_port}/api/v1\n")
+                time.sleep(1)  # Let API server start
+
+            # Start relay fleet
             self.start_all()
             self.status()
+
+            # Monitor loop
             self.monitor_loop()
         finally:
             self.stop_all()
@@ -212,7 +320,7 @@ class RelayOrchestrator:
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description='SpeedData Relay Orchestrator')
+    parser = argparse.ArgumentParser(description='SpeedData Relay Orchestrator v0.5')
     parser.add_argument(
         '--config',
         default='config',
@@ -229,13 +337,30 @@ def main():
         default=2.0,
         help='Health check interval in seconds (default: 2.0)'
     )
+    parser.add_argument(
+        '--api-port',
+        type=int,
+        default=8080,
+        help='REST API port (default: 8080)'
+    )
+    parser.add_argument(
+        '--no-api',
+        action='store_true',
+        help='Disable REST API'
+    )
 
     args = parser.parse_args()
 
-    print("=== SpeedData Relay Orchestrator ===\n")
+    print("=== SpeedData Relay Orchestrator v0.5 ===")
+    print("With embedded REST API for channel registration\n")
 
     try:
-        orchestrator = RelayOrchestrator(args.config, args.binary)
+        orchestrator = RelayOrchestrator(
+            args.config,
+            args.binary,
+            enable_api=not args.no_api,
+            api_port=args.api_port
+        )
         orchestrator.run()
     except FileNotFoundError as e:
         print(f"ERROR: {e}")
