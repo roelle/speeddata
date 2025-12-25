@@ -1,0 +1,42 @@
+{
+  "namespace": "speeddata.sensors",
+  "type": "record",
+  "name": "temperature_data",
+  "fields": [
+    {
+      "name": "time",
+      "type": "long",
+      "doc": "Unix timestamp in milliseconds"
+    },
+    {
+      "name": "device_id",
+      "type": "string",
+      "doc": "Device identifier"
+    },
+    {
+      "name": "temperature_c",
+      "type": "double",
+      "doc": "Temperature in Celsius"
+    },
+    {
+      "name": "temperature_f",
+      "type": "double",
+      "doc": "Temperature in Fahrenheit"
+    },
+    {
+      "name": "pressure_pa",
+      "type": "double",
+      "doc": "Pressure in Pascals"
+    },
+    {
+      "name": "humidity_pct",
+      "type": "double",
+      "doc": "Relative humidity percentage (0-100)"
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "doc": "Sensor status (ok, warning, error)"
+    }
+  ]
+}

@@ -310,7 +310,20 @@ def check_port_status(port: int):
 
 def create_app(database: RegistryDB, orch) -> Flask:
     """Create Flask app with registration API"""
-    app = Flask(__name__)
+    # Determine static folder path relative to api.py
+    api_dir = Path(__file__).parent
+    static_folder = api_dir.parent / 'registration' / 'frontend'
+
+    app = Flask(__name__,
+                static_folder=str(static_folder),
+                static_url_path='')
+
     init_api(database, orch)
     app.register_blueprint(api, url_prefix='/api/v1')
+
+    # Serve registration frontend at root
+    @app.route('/')
+    def index():
+        return app.send_static_file('index.html')
+
     return app

@@ -1,4 +1,4 @@
-const ws = new WebSocket("ws://localhost:8080");
+const ws = new WebSocket("ws://localhost:8081");  // Changed from 8080 (now used by orchestrator REST API)
 
 ws.onmessage = (event) => {
     const data = JSON.parse(event.data);

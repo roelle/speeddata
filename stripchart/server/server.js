@@ -8,7 +8,7 @@ const Long = require('long');
 // Subscribe to decimated multicast stream (matches config/global.yaml)
 const MULTICAST_GROUP = '239.1.1.2';
 const UDP_PORT = 6001;
-const WEBSOCKET_PORT = 8080;
+const WEBSOCKET_PORT = 8081;  // Changed from 8080 (now used by orchestrator REST API)
 const SCHEMA_FILE = '../../config/agents/example.avsc';
 
 // Define a custom Avro type for Long

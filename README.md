@@ -2,7 +2,9 @@
 
 SpeedData is a lightweight, ephemeral, high-performance system for receiving, batching, and visualizing data streamed over a network. The project leverages UDP multicast for low-latency communication, Avro for efficient serialization, and WebSockets for real-time updates in the browser.
 
-**v0.5 New:** REST API for dynamic channel registration - remote devices can now register/de-register channels at runtime without editing config files.
+**v0.6 New:** Web frontend and Python client library for channel registration - manage channels via browser or JupyterLab scripts.
+
+**v0.5:** REST API for dynamic channel registration - remote devices can now register/de-register channels at runtime without editing config files.
 
 Do you have a complex machine with a distributed control and telemetry system you would like to instrument? SpeedData makes data collection and visualization easy.
 
@@ -66,11 +68,18 @@ speeddata/
 │   ├── registry_db.py   # SQLite database for channel registry (v0.5)
 │   ├── README.md        # Relay documentation
 │   └── API.md           # REST API documentation (v0.5)
+├── registration/        # Channel registration UI (v0.6)
+│   ├── frontend/        # Web UI for channel management
+│   │   └── index.html   # Registration frontend (vanilla JS)
+│   └── README.md        # Registration documentation
 ├── stripchart/
 │   ├── server/          # WebSocket server (server.js)
 │   └── frontend/        # Web frontend (index.html, frontend.js)
-├── pivot/python/         # Row-to-column transformer (catcol.py)
-├── lib/python/          # Roelle DataSet with HDF5/AVRO loaders
+├── pivot/python/        # Row-to-column transformer (catcol.py)
+├── lib/python/          # Python libraries
+│   ├── dataset.py       # Roelle DataSet with HDF5/AVRO loaders
+│   ├── speeddata_client.py  # Python client library (v0.6)
+│   └── speeddata_config.py  # Configuration loader
 ├── examples/sender/     # Example data source (sender.py)
 ├── tests/               # Integration tests
 └── Makefile             # Build system
@@ -90,16 +99,24 @@ speeddata/
      - Endpoint: `http://localhost:8080/api/v1`
      - Register/de-register channels without editing config files
      - See `relay/API.md` for full API documentation
+   - **v0.6:** Web frontend and Python client library for channel management
+     - Web UI: `http://localhost:8080/`
+     - Python client: `from speeddata_client import SpeedDataClient`
+     - See `registration/README.md` for usage
    - See `relay/README.md` for relay details
    - **Legacy:** Python relay (`relay/python/rowdog.py`) deprecated in v0.4
-3. **Stripchart Server** (`stripchart/server/server.js`):
+3. **Registration UI** (`registration/frontend/`, v0.6):
+   - Browser-based channel management (vanilla JS)
+   - View channels, register/de-register via forms
+   - Auto-refresh, dark mode support
+4. **Stripchart Server** (`stripchart/server/server.js`):
    - Subscribes to relay multicast
    - Deserializes AVRO packets
    - Publishes signals over WebSockets
-4. **Stripchart Frontend** (`stripchart/frontend/`):
+5. **Stripchart Frontend** (`stripchart/frontend/`):
    - WebSocket client for live data display
    - Configured via HTML
-5. **Pivot** (`pivot/python/catcol.py`):
+6. **Pivot** (`pivot/python/catcol.py`):
    - Transforms row-based AVRO to column-based HDF5
    - Time-range query and signal filtering
    - Output integrates with Roelle DataSet
@@ -176,6 +193,132 @@ config = load_config('relay')
 print(config['channels'])
 print(config['multicast']['decimated'])
 ```
+
+### Channel Registration (v0.5/v0.6)
+
+SpeedData v0.5 introduced a REST API for dynamic channel registration, and v0.6 added a web frontend and Python client library for easy management.
+
+#### Web Frontend (v0.6)
+
+**Access the registration UI:**
+```bash
+# Start orchestrator with REST API (default port 8080)
+python relay/orchestrator.py
+
+# Open browser to registration frontend
+open http://localhost:8080/
+# Or navigate to: http://localhost:8080/
+```
+
+**Features:**
+- View all registered channels (name, port, schema, status)
+- Register new channels via form
+- De-register channels with one click
+- Auto-refresh every 5 seconds
+
+**Manual registration workflow:**
+1. Fill in form:
+   - **Name**: Unique channel identifier (e.g., "temperature_sensor")
+   - **Port**: UDP multicast port in range 26000-27000
+   - **Schema Path**: Path to AVRO schema file (e.g., "config/agents/example.avsc")
+   - **Decimation**: Decimation factor for visualization (default: 1)
+2. Click "Register Channel"
+3. Channel appears in table above
+4. Relay process automatically starts (visible with `ps aux | grep relay`)
+5. To remove: click "Remove" button in table
+
+#### Python Client Library (v0.6)
+
+**Install and import:**
+```python
+# Add to Python path
+import sys
+sys.path.append('/path/to/speeddata/lib/python')
+
+from speeddata_client import SpeedDataClient
+```
+
+**Basic usage:**
+```python
+# Initialize client
+client = SpeedDataClient()  # Default: http://localhost:8080/api/v1
+
+# List all channels
+channels = client.list_channels()
+for ch in channels:
+    print(f"{ch['name']}: port {ch['port']}, status {ch['status']}")
+
+# Register a channel
+client.register_channel(
+    name="sensor1",
+    port=26100,
+    schema_path="config/agents/example.avsc",
+    config={"decimation": 5}
+)
+
+# Get channel details
+info = client.get_channel("sensor1")
+print(info)
+
+# De-register channel
+client.deregister_channel("sensor1")
+```
+
+**JupyterLab workflow:**
+```python
+# In a Jupyter notebook
+from speeddata_client import SpeedDataClient
+client = SpeedDataClient()
+
+# Register channel from notebook
+client.register_channel(
+    name="experiment_1",
+    port=26200,
+    schema_path="schemas/experiment.avsc",
+    config={"decimation": 5}
+)
+
+# List active channels
+active = client.list_channels(status="active")
+print(f"Active channels: {len(active)}")
+```
+
+**Available methods:**
+- `list_channels(status=None)` - List all channels, optionally filtered by status
+- `register_channel(name, port, schema_path, config=None)` - Register new channel
+- `deregister_channel(name)` - Remove channel and stop relay
+- `get_channel(name)` - Get channel details
+- `upload_schema(name, schema_file)` - Helper for schema file handling
+
+See `registration/README.md` for complete documentation.
+
+#### REST API Endpoints (v0.5)
+
+The orchestrator includes an embedded Flask API for channel management:
+
+**Base URL:** `http://localhost:8080/api/v1`
+
+**Endpoints:**
+- `GET /channels` - List all channels
+- `GET /channels/<name>` - Get channel details
+- `POST /channels` - Register new channel
+- `DELETE /channels/<name>` - De-register channel
+- `GET /channels/<name>/schema` - Get AVRO schema
+- `GET /ports/available` - List available ports
+
+**Example: Register channel via curl:**
+```bash
+curl -X POST http://localhost:8080/api/v1/channels \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "test_sensor",
+    "port": 26100,
+    "schema": "config/agents/example.avsc",
+    "config": {"decimation": 10}
+  }'
+```
+
+See `relay/API.md` for full API documentation.
 
 ### Pivot REST API
 
@@ -419,19 +562,22 @@ cd ../..
 
 **Step 2: Start Services**
 ```bash
-# Terminal 1: Start example data sender
+# Terminal 1: Start relay orchestrator (manages C relay processes + REST API)
+python relay/orchestrator.py
+# Note: This starts the embedded Flask API on port 8080
+# Registration UI available at http://localhost:8080/
+
+# Terminal 2: Start example data sender (uses default channel on port 26000)
 python examples/sender/sender.py
 
-# Terminal 2: Start relay orchestrator (manages C relay processes)
-python relay/orchestrator.py
-# OR use Python relay (deprecated):
-# python relay/python/rowdog.py
+# Terminal 3 (optional): Start temperature sensor sender (port 26001)
+python examples/sender/temperature_sender.py
 
-# Terminal 3: Start stripchart WebSocket server
+# Terminal 4: Start stripchart WebSocket server (port 8081)
 cd stripchart/server
 node server.js
 
-# Terminal 4: Start Pivot API server (optional)
+# Terminal 5: Start Pivot API server (optional, port 8000)
 python pivot/python/api_server.py
 ```
 
@@ -446,6 +592,120 @@ open stripchart/frontend/index.html
 # - Scrolling stripcharts with live data
 # - Dark/light mode based on system preference
 ```
+
+**Step 3a: Test Registration Frontend (v0.6)**
+```bash
+# Open registration frontend in browser
+open http://localhost:8080/
+# Or navigate to: http://localhost:8080/
+
+# You should see:
+# - Table of registered channels (at least 'example' channel)
+# - Registration form below the table
+# - Channel status updating automatically
+```
+
+**Manual Registration Test:**
+
+**Multi-Channel Registration Demo:**
+1. **Register temperature sensor channel** (if temperature_sender.py is running):
+   - **Name**: `temperature`
+   - **Port**: `26001`
+   - **Schema Path**: `config/agents/temperature.avsc`
+   - **Decimation**: `1`
+   - Click "Register Channel"
+   - Success message appears
+   - New row appears with status "active"
+   - Click "Schema" button to view temperature schema (shows fields: temperature_c, pressure_pa, etc.)
+   - **Latest Data** column shows live sensor readings (temperature, pressure, humidity)
+   - WebSocket status indicator shows "Connected" (green)
+
+2. **Verify live data preview:**
+   - Both `example` and `temperature` channels show real-time data
+   - Values update every second from WebSocket connection
+   - Example channel shows: sine_wave, ramp, square_wave, noise
+   - Temperature channel shows: temperature_c, pressure_pa, humidity_pct
+
+3. **Register additional test channel:**
+   - **Name**: `test_channel`
+   - **Port**: `26100`
+   - **Schema Path**: `config/agents/example.avsc`
+   - **Decimation**: `5`
+   - Click "Register Channel"
+   - Appears in table (no data until sender starts on port 26100)
+
+4. **Verify relay processes:**
+   ```bash
+   ps aux | grep relay
+   # Should show multiple relay processes:
+   # relay/c/build/relay example
+   # relay/c/build/relay temperature
+   # relay/c/build/relay test_channel
+   ```
+
+5. **Test de-registration:**
+   - Click "Remove" button for `test_channel`
+   - Confirm in popup dialog
+   - Row disappears from table
+   - Relay process stops (verify with `ps aux | grep relay`)
+
+**Step 3b: Test Python Client (v0.6)**
+```bash
+# In Python/IPython
+python
+>>> import sys
+>>> sys.path.append('lib/python')
+>>> from speeddata_client import SpeedDataClient
+>>> client = SpeedDataClient()
+
+# List channels
+>>> channels = client.list_channels()
+>>> print(f"Found {len(channels)} channels")
+>>> for ch in channels:
+...     print(f"  {ch['name']}: port {ch['port']}, status {ch['status']}")
+
+# Register a channel programmatically
+>>> client.register_channel(
+...     name="python_test",
+...     port=26101,
+...     schema_path="config/agents/example.avsc",
+...     config={"decimation": 10}
+... )
+
+# Verify it appears in web UI (refresh browser)
+# Should see 'python_test' in the table
+
+# Get channel details
+>>> info = client.get_channel("python_test")
+>>> print(info)
+
+# De-register
+>>> client.deregister_channel("python_test")
+>>> print("Removed")
+```
+
+**Step 3c: Test REST API Directly (v0.5)**
+```bash
+# List channels
+curl http://localhost:8080/api/v1/channels | python -m json.tool
+
+# Register channel via API
+curl -X POST http://localhost:8080/api/v1/channels \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "api_test",
+    "port": 26102,
+    "schema": "config/agents/example.avsc",
+    "config": {"decimation": 15}
+  }'
+
+# Get channel details
+curl http://localhost:8080/api/v1/channels/api_test | python -m json.tool
+
+# Delete channel
+curl -X DELETE http://localhost:8080/api/v1/channels/api_test
+```
+
 
 **Step 4: Test Pivot API (optional)**
 ```bash
@@ -512,12 +772,13 @@ pytest tests/test_api_burst.py                 # Pivot API burst tests
 # Check if ports are in use
 lsof -i :26000  # Sender
 lsof -i :26001  # Relay
-lsof -i :8080   # Stripchart WebSocket
+lsof -i :8080   # Orchestrator REST API + Registration Frontend
+lsof -i :8081   # Stripchart WebSocket
 lsof -i :8000   # Pivot API
 
 # Kill processes if needed
 pkill -f sender.py
-pkill -f rowdog.py
+pkill -f orchestrator.py
 pkill -f server.js
 pkill -f api_server.py
 ```
@@ -581,38 +842,58 @@ pkill -f api_server.py
   - `examples/jupyter/speeddata_analysis_example.ipynb`
   - Demonstrates Pivot API usage, DataSet loading, plotting, analysis 
 
-### v0.4 - In Progress
+### v0.4 - December 2024 ✓
 - ✓ **Port relay to compiled language** (FPF Decision: DRR-2025-12-24-v0-4-relay-architecture-c-stdio-per-channel-revised)
   - C99 implementation with 5Gbps per-channel throughput
   - Per-channel process model (fault isolation)
   - Python orchestrator for fleet management
   - Comprehensive testing (unit + integration + full system)
   - See `relay/README.md` for details
+
+### v0.5 - December 2024 ✓
+- ✓ **Dynamic Channel Registration via REST API** (FPF Decision: DRR-2025-12-24-registration-api)
+  - Embedded Flask API in orchestrator (`http://localhost:8080/api/v1`)
+  - SQLite registry database with ACID guarantees
+  - Register/de-register channels at runtime without config file edits
+  - Automatic relay process spawning and lifecycle management
+  - Port conflict detection via UNIQUE constraints
+  - See `relay/API.md` for full API documentation
+
+### v0.6 - December 2024 ✓
+- ✓ **Web Frontend for Registration** (FPF Decision: DRR-2025-12-24-registration-frontend-vanilla-js-thin-python-wrapper)
+  - Browser-based channel management UI (vanilla JS, no build tools)
+  - View channels, register/de-register via forms
+  - Auto-refresh, dark mode support
+  - Accessible at `http://localhost:8080/`
+- ✓ **Python Client Library for Programmatic Access**
+  - Thin wrapper around requests library (`lib/python/speeddata_client.py`)
+  - JupyterLab-friendly API for scripting
+  - Methods: `list_channels()`, `register_channel()`, `deregister_channel()`, etc.
+  - Large schema support validated (1.02 MB via HTTP POST)
+  - See `registration/README.md` for usage examples
+
+### v0.7 - Future
 - [ ] Investigate larger data objects in HDF5 files for better compression (would change storage format)
-- [ ] Create a status and control website (registration, channels, signals etc.)
-- [ ] Add channel registration (via REST)
+- [ ] Start using git issues to track improvements and roadmap
+- [ ] Optimize build and tune for Raspberry Pi with deployment instructions
 
-### v0.5 - May 2025
-- Firm interfaces
-- Add docuemntation
-- Choose a License
+### v0.8 - Future
+- [ ] Firm interfaces and API versioning
+- [ ] Comprehensive documentation
+- [ ] Choose a License (open, non-GPL)
 
-### v0.6 - June 2025
-- dockerize
-- Split apps into repositories (speeddata: relay, stripchart, pivot)
-- Build docker container for 
+### v0.9 - Future
+- [ ] Dockerize components
+- [ ] Split apps into repositories (speeddata: relay, stripchart, pivot)
+- [ ] CI/CD pipeline
 
-### v0.7 - July 2025
-- Start using git issues to track improvements and roadmap
-- Optimize a build and tune for a Raspberry Pi and provide instructions for use
+### v1.0 - Future
+- [ ] Production-ready release
+- [ ] Performance benchmarks
+- [ ] Deployment guides
 
-### v0.8 - August 2025
-
-### v0.9 - September 2025
-
-### v1.0 - October 2025
-
-### v2.0
+### v2.0 - Future
+- [ ] Enhanced features based on real-world usage
 
 ## Contributing
 Contributions are dubious at the moment while the architecture is in flux.

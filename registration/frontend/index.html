@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpeedData Registration</title>
+    <style>
+        body {
+            font-family: monospace;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 0; }
+        h3 { margin: 10px 0; }
+        .section {
+            background: white;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th { background: #eee; }
+        input, select, button {
+            font-family: monospace;
+            padding: 6px 10px;
+            margin: 5px 0;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        button:hover { background: #0056b3; }
+        button.secondary { background: #6c757d; }
+        button.secondary:hover { background: #545b62; }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        .status-active { color: green; }
+        .status-registered { color: orange; }
+        .error { color: red; }
+        .success { color: green; }
+        .live-data {
+            font-size: 0.85em;
+            color: #666;
+            max-height: 60px;
+            overflow-y: auto;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+        }
+        .modal-content {
+            background: white;
+            margin: 5% auto;
+            padding: 20px;
+            border-radius: 5px;
+            width: 80%;
+            max-width: 800px;
+            max-height: 80%;
+            overflow-y: auto;
+        }
+        .modal-close {
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .modal-close:hover { color: #dc3545; }
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+        }
+        .ws-status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 0.85em;
+            margin-left: 10px;
+        }
+        .ws-connected { background: #d4edda; color: #155724; }
+        .ws-disconnected { background: #f8d7da; color: #721c24; }
+        @media (prefers-color-scheme: dark) {
+            body { background: #1a1a1a; color: #eee; }
+            .section { background: #2a2a2a; }
+            th { background: #333; }
+            input, select { background: #333; color: #eee; border: 1px solid #555; }
+            .modal-content { background: #2a2a2a; color: #eee; }
+            pre { background: #333; }
+            .live-data { color: #aaa; }
+        }
+    </style>
+</head>
+<body>
+    <h1>
+        SpeedData Channel Registration
+        <span id="wsStatus" class="ws-status ws-disconnected">WebSocket: Disconnected</span>
+    </h1>
+
+    <div class="section">
+        <h2>Registered Channels</h2>
+        <table id="channelTable">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Port</th>
+                    <th>Schema</th>
+                    <th>Status</th>
+                    <th>Latest Data</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="channelList">
+                <tr><td colspan="6">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>Register New Channel</h2>
+        <div id="regMessage"></div>
+        <form id="registerForm">
+            <div>
+                <label>Name: <input type="text" id="regName" required></label>
+            </div>
+            <div>
+                <label>Port: <input type="number" id="regPort" min="26000" max="27000" required></label>
+            </div>
+            <div>
+                <label>Schema Path: <input type="text" id="regSchema" placeholder="config/agents/example.avsc" required></label>
+            </div>
+            <div>
+                <label>Decimation: <input type="number" id="regDecimation" value="1" min="1"></label>
+            </div>
+            <button type="submit">Register Channel</button>
+        </form>
+    </div>
+
+    <!-- Schema Modal -->
+    <div id="schemaModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeSchemaModal()">&times;</span>
+            <h2 id="schemaTitle">Schema</h2>
+            <pre id="schemaContent">Loading...</pre>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api/v1';
+        const WS_URL = 'ws://localhost:8081';
+
+        let ws = null;
+        let liveData = {};
+        let channels = [];
+
+        // WebSocket connection for live data
+        function connectWebSocket() {
+            try {
+                ws = new WebSocket(WS_URL);
+
+                ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    document.getElementById('wsStatus').className = 'ws-status ws-connected';
+                    document.getElementById('wsStatus').textContent = 'WebSocket: Connected';
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+
+                    // Store latest data for each channel
+                    // Assume data comes with channel prefix (e.g., "example.sine_wave")
+                    for (const key in data) {
+                        liveData[key] = data[key];
+                    }
+
+                    updateLiveDataDisplay();
+                };
+
+                ws.onclose = () => {
+                    console.log('WebSocket disconnected');
+                    document.getElementById('wsStatus').className = 'ws-status ws-disconnected';
+                    document.getElementById('wsStatus').textContent = 'WebSocket: Disconnected';
+
+                    // Reconnect after 5 seconds
+                    setTimeout(connectWebSocket, 5000);
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                };
+            } catch (err) {
+                console.error('Failed to connect WebSocket:', err);
+                setTimeout(connectWebSocket, 5000);
+            }
+        }
+
+        function updateLiveDataDisplay() {
+            channels.forEach(ch => {
+                const cell = document.getElementById(`data-${ch.name}`);
+                if (!cell) return;
+
+                // Find signals that belong to this channel
+                const channelData = [];
+                for (const key in liveData) {
+                    // Match signals like "example.sine_wave" or just "sine_wave"
+                    if (key.startsWith(`${ch.name}.`) || !key.includes('.')) {
+                        const signalName = key.includes('.') ? key.split('.')[1] : key;
+                        const value = liveData[key];
+
+                        // Format value based on type
+                        let formatted;
+                        if (typeof value === 'number') {
+                            formatted = value.toFixed(3);
+                        } else {
+                            formatted = String(value);
+                        }
+
+                        channelData.push(`${signalName}: ${formatted}`);
+                    }
+                }
+
+                if (channelData.length > 0) {
+                    cell.innerHTML = channelData.slice(0, 3).join('<br>');
+                } else {
+                    cell.innerHTML = '<em>No data</em>';
+                }
+            });
+        }
+
+        async function fetchChannels() {
+            try {
+                const resp = await fetch(`${API_BASE}/channels`);
+                const data = await resp.json();
+                const tbody = document.getElementById('channelList');
+
+                channels = data.channels || [];
+
+                if (channels.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6">No channels registered</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = channels.map(ch => `
+                    <tr>
+                        <td>${ch.name}</td>
+                        <td>${ch.port}</td>
+                        <td>${ch.schema_path}</td>
+                        <td class="status-${ch.status}">${ch.status}</td>
+                        <td class="live-data" id="data-${ch.name}"><em>Waiting...</em></td>
+                        <td>
+                            <button class="secondary" onclick="viewSchema('${ch.name}')">Schema</button>
+                            <button class="danger" onclick="deregister('${ch.name}')">Remove</button>
+                        </td>
+                    </tr>
+                `).join('');
+
+                updateLiveDataDisplay();
+            } catch (err) {
+                document.getElementById('channelList').innerHTML =
+                    `<tr><td colspan="6" class="error">Error: ${err.message}</td></tr>`;
+            }
+        }
+
+        async function viewSchema(name) {
+            const modal = document.getElementById('schemaModal');
+            const title = document.getElementById('schemaTitle');
+            const content = document.getElementById('schemaContent');
+
+            title.textContent = `Schema: ${name}`;
+            content.textContent = 'Loading...';
+            modal.style.display = 'block';
+
+            try {
+                const resp = await fetch(`${API_BASE}/channels/${name}/schema`);
+                if (resp.ok) {
+                    const schema = await resp.json();
+                    content.textContent = JSON.stringify(schema, null, 2);
+                } else {
+                    content.textContent = `Error: ${await resp.text()}`;
+                }
+            } catch (err) {
+                content.textContent = `Error: ${err.message}`;
+            }
+        }
+
+        function closeSchemaModal() {
+            document.getElementById('schemaModal').style.display = 'none';
+        }
+
+        // Close modal when clicking outside
+        window.onclick = (event) => {
+            const modal = document.getElementById('schemaModal');
+            if (event.target === modal) {
+                closeSchemaModal();
+            }
+        };
+
+        async function deregister(name) {
+            if (!confirm(`Remove channel "${name}"?`)) return;
+            try {
+                const resp = await fetch(`${API_BASE}/channels/${name}`, { method: 'DELETE' });
+                if (resp.ok) {
+                    fetchChannels();
+                } else {
+                    alert(`Failed to remove: ${await resp.text()}`);
+                }
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            }
+        }
+
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const msg = document.getElementById('regMessage');
+
+            const payload = {
+                name: document.getElementById('regName').value,
+                port: parseInt(document.getElementById('regPort').value),
+                schema: document.getElementById('regSchema').value,
+                config: {
+                    decimation: parseInt(document.getElementById('regDecimation').value)
+                }
+            };
+
+            try {
+                const resp = await fetch(`${API_BASE}/channels`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (resp.ok) {
+                    msg.innerHTML = '<p class="success">Channel registered successfully!</p>';
+                    document.getElementById('registerForm').reset();
+                    fetchChannels();
+                } else {
+                    const err = await resp.text();
+                    msg.innerHTML = `<p class="error">Registration failed: ${err}</p>`;
+                }
+            } catch (err) {
+                msg.innerHTML = `<p class="error">Error: ${err.message}</p>`;
+            }
+        });
+
+        // Initialize
+        connectWebSocket();
+        fetchChannels();
+        setInterval(fetchChannels, 5000);
+    </script>
+</body>
+</html>

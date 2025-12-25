@@ -1,7 +1,7 @@
 # SpeedData Stripchart Configuration
 
 websocket:
-  port: 8080
+  port: 8081  # Changed from 8080 (now used by orchestrator REST API)
 
 decimation:
   # Stripchart subscribes to relay's decimated multicast stream
