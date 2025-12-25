@@ -876,11 +876,11 @@ pkill -f api_server.py
 - [ ] Investigate larger data objects in HDF5 files for better compression (would change storage format)
 - [ ] Start using git issues to track improvements and roadmap
 - [ ] Optimize build and tune for Raspberry Pi with deployment instructions
+- ✓ **Choose a License**: MIT License (maximum adoption, permissive, simple)
 
 ### v0.8 - Future
 - [ ] Firm interfaces and API versioning
 - [ ] Comprehensive documentation
-- [ ] Choose a License (open, non-GPL)
 
 ### v0.9 - Future
 - [ ] Dockerize components
@@ -901,4 +901,7 @@ If you want to participate, reach out to the maintainer, roelle, for a
 discussion.
 
 ## License
-TBD - Subject to change (will be open, not GPL)
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+SpeedData is free and open source software. You are free to use, modify, and distribute it, including in commercial and proprietary products.
